@@ -269,7 +269,9 @@ export interface Renderer {
 /** <link> tags with attributes represented by an object */
 export type Resource = Record<string, string>;
 
-export interface RouteData {
+export type RequestHeaders = Record<string, string>;
+
+export interface PageRouteData {
   component: string;
   generate: (data?: any) => string;
   params: string[];
@@ -277,6 +279,38 @@ export interface RouteData {
   pattern: RegExp;
   type: 'page';
 }
+
+type ToJSON = { toJSON(...args: any[]): JSONValue };
+type JSONValue = Exclude<JSONString, ToJSON>;
+export type JSONString =
+	| string
+	| number
+	| boolean
+	| null
+	| ToJSON
+	| JSONString[]
+	| { [key: string]: JSONString }
+  type DefaultBody = JSONString | Uint8Array;
+export interface EndpointOutput<Body extends DefaultBody = DefaultBody> {
+  status?: number;
+  headers?: RequestHeaders;
+  body?: Body;
+}
+export interface RequestHandler<Output extends DefaultBody = DefaultBody> {
+  (): Promise<void | EndpointOutput<Output>>;
+}
+export interface EndpointRouteData<Output extends DefaultBody = DefaultBody> {
+  pattern: RegExp;
+  type: 'endpoint';
+  params: string[];
+  file: string;
+  pathname: string;
+  load: (vite: vite.ViteDevServer) => Promise<{
+    [method: string]: void | RequestHandler<Output>
+  }>;
+}
+
+export type RouteData = PageRouteData | EndpointRouteData;
 
 export type RouteCache = Record<string, GetStaticPathsResult>;
 
