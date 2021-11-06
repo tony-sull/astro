@@ -1,5 +1,6 @@
 import type { AstroConfig, ComponentInstance, GetStaticPathsResult, ManifestData, Params, RouteData } from '../../@types/astro-core';
 import type { LogOptions } from '../logger';
+import type { ViteDevServer } from '../../../vendor/vite'
 
 import fs from 'fs';
 import path from 'path';
@@ -123,7 +124,9 @@ export function createRouteManifest({ config, cwd }: { config: AstroConfig; cwd?
 
       const parts = getParts(segment, file);
       const isIndex = isDir ? false : basename.startsWith('index.');
+      const isPage = ext === '.astro';
       const routeSuffix = basename.slice(basename.indexOf('.'), -ext.length);
+      console.log(basename, isPage);
 
       items.push({
         basename,
@@ -132,7 +135,7 @@ export function createRouteManifest({ config, cwd }: { config: AstroConfig; cwd?
         file: slash(file),
         isDir,
         isIndex,
-        isPage: true,
+        isPage,
         routeSuffix,
       });
     });
@@ -177,19 +180,35 @@ export function createRouteManifest({ config, cwd }: { config: AstroConfig; cwd?
         walk(path.join(dir, item.basename), segments, params);
       } else {
         components.push(item.file);
-        const component = item.file;
         const pattern = getPattern(segments, config.devOptions.trailingSlash);
-        const generate = getGenerator(segments, config.devOptions.trailingSlash);
-        const pathname = segments.every((segment) => segment.length === 1 && !segment[0].dynamic) ? `/${segments.map((segment) => segment[0].content).join('/')}` : null;
+        const pathname = segments.every((segment) => segment.length === 1 && !segment[0].dynamic) ? `/${segments.map((segment) => segment[0].content).join('/')}` : undefined;
 
-        routes.push({
-          type: 'page',
-          pattern,
-          params,
-          component,
-          generate,
-          pathname: pathname || undefined,
-        });
+        if (item.isPage) {
+          const component = item.file;
+          const generate = getGenerator(segments, config.devOptions.trailingSlash);
+          routes.push({
+            type: 'page',
+            pattern,
+            params,
+            component,
+            generate,
+            pathname: pathname || undefined,
+          });
+        } else {
+          if (pathname) {
+            routes.push({
+              type: 'endpoint',
+              pattern,
+              params,
+              file: item.file,
+              pathname,
+              load: async (vite: ViteDevServer) => {
+                const url = path.resolve(cwd!, item.file);
+                return await vite.ssrLoadModule(url);
+              }
+            })
+          }
+        }
       }
     });
   }

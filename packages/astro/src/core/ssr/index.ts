@@ -1,6 +1,6 @@
 import type { BuildResult } from 'esbuild';
 import type vite from '../vite';
-import type { AstroConfig, ComponentInstance, GetStaticPathsResult, Params, Props, Renderer, RouteCache, RouteData, RuntimeMode, SSRError } from '../../@types/astro-core';
+import type { AstroConfig, ComponentInstance, EndpointRouteData, GetStaticPathsResult, PageRouteData, Params, Props, Renderer, RouteCache, RouteData, RuntimeMode, SSRError } from '../../@types/astro-core';
 import type { AstroGlobal, TopLevelAstro, SSRResult, SSRElement } from '../../@types/astro-runtime';
 import type { LogOptions } from '../logger';
 
@@ -12,8 +12,9 @@ import { getStylesForID } from './css.js';
 import { injectTags } from './html.js';
 import { generatePaginateFunction } from './paginate.js';
 import { getParams, validateGetStaticPathsModule, validateGetStaticPathsResult } from './routing.js';
+import { ViteDevServer } from 'vite';
 
-interface SSROptions {
+interface SSROptions<Route extends RouteData = RouteData> {
   /** an instance of the AstroConfig */
   astroConfig: AstroConfig;
   /** location of file on disk */
@@ -27,7 +28,7 @@ interface SSROptions {
   /** the web request (needed for dynamic routes) */
   pathname: string;
   /** optional, in case we need to render something outside of a dev server */
-  route?: RouteData;
+  route?: Route;
   /** pass in route cache because SSR can’t manage cache-busting */
   routeCache: RouteCache;
   /** Vite instance */
@@ -72,8 +73,8 @@ async function resolveRenderers(viteServer: vite.ViteDevServer, astroConfig: Ast
   return renderers;
 }
 
-/** use Vite to SSR */
-export async function ssr({ astroConfig, filePath, logging, mode, origin, pathname, route, routeCache, viteServer }: SSROptions): Promise<string> {
+/** use Vite to SSR a page */
+async function ssrPage({ astroConfig, filePath, logging, mode, origin, pathname, route, routeCache, viteServer }: SSROptions<PageRouteData>): Promise<string> {
   try {
     // Important: This needs to happen first, in case a renderer provides polyfills.
     const renderers = await resolveRenderers(viteServer, astroConfig);
@@ -212,5 +213,35 @@ ${frame}
 
     // Generic error (probably from Vite, and already formatted)
     throw e;
+  }
+}
+
+async function ssrEndpoint({ route, viteServer }: { route: EndpointRouteData, viteServer: ViteDevServer }): Promise<string> {
+  const mod = await route.load(viteServer);
+
+  const handler = mod['get'];
+
+  if (!handler) {
+    throw new Error(`Endpoint get handler not found for ${route.pathname}`);
+  }
+
+  const response = await handler();
+
+  if (typeof response !== 'object') {
+    throw new Error(`Invalid endpoint response from route ${route.pathname}: expected an object, got ${typeof response}`);
+  }
+
+  const { body } = response;
+
+  // TODO: Should this actually stringify all return types?
+  return typeof body === 'string' ? body : JSON.stringify(body);
+}
+
+export async function ssr(options: SSROptions): Promise<string> {
+  if (options.route && options.route.type === 'endpoint') {
+    const { route, viteServer } = options;
+    return ssrEndpoint({ route, viteServer });
+  } else {
+    return ssrPage(options as SSROptions<PageRouteData>);
   }
 }

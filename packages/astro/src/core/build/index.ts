@@ -1,5 +1,5 @@
 import type { InputHTMLOptions } from '@web/rollup-plugin-html';
-import type { AstroConfig, ComponentInstance, GetStaticPathsResult, ManifestData, RouteCache, RouteData, RSSResult } from '../../@types/astro-core';
+import type { AstroConfig, ComponentInstance, GetStaticPathsResult, ManifestData, PageRouteData, RequestHandler, RouteCache, RouteData, RSSResult } from '../../@types/astro-core';
 import type { LogOptions } from '../logger';
 
 import { rollupPluginHTML } from '@web/rollup-plugin-html';
@@ -78,21 +78,31 @@ class AstroBuilder {
     // with parallelized builds without guaranteeing that this is called first.
     await Promise.all(
       this.manifest.routes.map(async (route) => {
-        // static route:
-        if (route.pathname) {
-          allPages[route.component] = { ...route, paths: [route.pathname] };
-          return;
-        }
-        // dynamic route:
-        const result = await this.getStaticPathsForRoute(route);
-        if (result.rss?.xml) {
-          const rssFile = new URL(result.rss.url.replace(/^\/?/, './'), this.config.dist);
-          if (assets[fileURLToPath(rssFile)]) {
-            throw new Error(`[getStaticPaths] RSS feed ${result.rss.url} already exists.\nUse \`rss(data, {url: '...'})\` to choose a unique, custom URL. (${route.component})`);
+        if (route.type === 'page') {
+          // static route:
+          if (route.pathname) {
+            allPages[route.component] = { ...route, paths: [route.pathname] };
+            return;
           }
-          assets[fileURLToPath(rssFile)] = result.rss.xml;
+          // dynamic route:
+          const result = await this.getStaticPathsForRoute(route);
+          if (result.rss?.xml) {
+            const rssFile = new URL(result.rss.url.replace(/^\/?/, './'), this.config.dist);
+            if (assets[fileURLToPath(rssFile)]) {
+              throw new Error(`[getStaticPaths] RSS feed ${result.rss.url} already exists.\nUse \`rss(data, {url: '...'})\` to choose a unique, custom URL. (${route.component})`);
+            }
+            assets[fileURLToPath(rssFile)] = result.rss.xml;
+          }
+          allPages[route.component] = { ...route, paths: result.paths };
+        } else if (route.type === 'endpoint') {
+          const mod = await route.load(this.viteServer!);
+
+          const handler = mod['get'];
+
+          if(handler) {
+            allPages[route.file] = { ...route, paths: [route.pathname!] };
+          }
         }
-        allPages[route.component] = { ...route, paths: result.paths };
       })
     );
 
@@ -185,7 +195,7 @@ class AstroBuilder {
   }
 
   /** Extract all static paths from a dynamic route */
-  private async getStaticPathsForRoute(route: RouteData): Promise<{ paths: string[]; rss?: RSSResult }> {
+  private async getStaticPathsForRoute(route: PageRouteData): Promise<{ paths: string[]; rss?: RSSResult }> {
     if (!this.viteServer) throw new Error(`vite.createServer() not called!`);
     const filePath = new URL(`./${route.component}`, this.config.projectRoot);
     const mod = (await this.viteServer.ssrLoadModule(fileURLToPath(filePath))) as ComponentInstance;
