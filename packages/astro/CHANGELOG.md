@@ -1,5 +1,11 @@
 # astro
 
+## 0.21.0-next.2
+
+### Patch Changes
+
+- 2e1bded7: fix: Improve Tailwind HMR
+
 ## 0.21.0-next.1
 
 ### Patch Changes
