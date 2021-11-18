@@ -1,5 +1,11 @@
 # astro
 
+## 0.21.0-next.8
+
+### Patch Changes
+
+- 53d9cf5e: Fixes dev server not stopping cleanly
+
 ## 0.21.0-next.7
 
 ### Patch Changes
